@@ -157,14 +157,59 @@ int saveBMP(const char *filename, const Image *img)
     return 1;
 }
 
-Image* convolute(const Image* img, const float* kernel, int kernelSize)
+uchar normalize(float value)
 {
-    // For demonstration, just return a copy of the original image
+    if (value < 0) return 0;
+    if (value > 255) return 255;
+    return (uchar)value;
+}
+
+Image* convolveSerial(const Image* img, const float* kernel, int kernelSize)
+{
+    int width = img->width;
+    int height = img->height;
     Image* outImg = (Image*)malloc(sizeof(Image));
-    outImg->width = img->width;
-    outImg->height = img->height;
-    outImg->data = (RGB*)malloc(img->width * img->height * sizeof(RGB));
-    memcpy(outImg->data, img->data, img->width * img->height * sizeof(RGB));
+
+    if(outImg == NULL){
+        perror("Error allocating memory for output image\n");
+        exit(-1);
+    }
+
+    outImg->width = width;
+    outImg->height = height;
+    outImg->data = (RGB*)malloc(width * height * sizeof(RGB));
+
+    if(outImg->data == NULL){
+        perror("Error allocating memory for output image data\n");
+        free(outImg);
+        exit(-1);
+    }
+
+    for(int row = 0; row < height; ++row){
+        for(int pixel = 0; pixel < width; ++pixel){
+            float red = 0.0f, green = 0.0f, blue = 0.0f;
+
+            for(int kRow = 0; kRow < kernelSize; ++kRow){
+                for(int kPixel = 0; kPixel < kernelSize; ++kPixel){
+                    int imgRow = row + kRow - kernelSize / 2;
+                    int imgCol = pixel + kPixel - kernelSize / 2;
+
+                    if(imgRow >= 0 && imgRow < height && imgCol >= 0 && imgCol < width){
+                        RGB currPixel = img->data[imgRow * width + imgCol];
+                        float kVal = kernel[kRow * kernelSize + kPixel];
+
+                        red += currPixel.r * kVal;
+                        green += currPixel.g * kVal;
+                        blue += currPixel.b * kVal;
+                    }
+                }
+            }
+            outImg->data[row * width + pixel].r = normalize(red);
+            outImg->data[row * width + pixel].g = normalize(green);
+            outImg->data[row * width + pixel].b = normalize(blue);
+        }
+    }
+
     return outImg;
 }
 
@@ -172,14 +217,15 @@ Image* convolute(const Image* img, const float* kernel, int kernelSize)
 /* Test program */
 int main(int argc, char **argv)
 {
-    if (argc < 3)
+    if (argc < 4)
     {
-        fprintf(stderr, "Usage: %s input.bmp output.bmp\n", argv[0]);
+        fprintf(stderr, "Usage: %s input.bmp output.bmp kernel\n", argv[0]);
         return 1;
     }
 
     const char *in_filename = argv[1];
     const char *out_filename = argv[2];
+    const char *kernel_name = argv[3];
 
     printf("Loading image from file %s \n", in_filename);
 
@@ -193,11 +239,41 @@ int main(int argc, char **argv)
 
     int width = img->width;
     int height = img->height;
-
     printf("Image size is width=%d  and height=%d \n", width, height);
 
-    Image* outImg = convolute(img, NULL, 0);
-
+    Image* outImg = NULL;
+    // Applying serial convolution
+    if(strcmp(kernel_name, "edge") == 0) {
+        printf("Using edge detection kernel\n");
+        outImg = convolveSerial(img, edge, 3);
+    }
+    else if(strcmp(kernel_name, "ridge") == 0) {
+        printf("Using ridge detection kernel\n");
+        outImg = convolveSerial(img, ridge, 3);
+    }
+    else if(strcmp(kernel_name, "boxBlur") == 0) {
+        printf("Using box blur kernel\n");
+        outImg = convolveSerial(img, boxBlur, 3);
+    }
+    else if(strcmp(kernel_name, "gaussBlur3") == 0) {
+        printf("Using Gaussian blur 3 kernel\n");
+        outImg = convolveSerial(img, gaussBlur3, 3);
+    }
+    else if(strcmp(kernel_name, "gaussBlur5") == 0) {
+        printf("Using Gaussian blur 5 kernel\n");
+        outImg = convolveSerial(img, gaussBlur5, 5);
+    }
+    else if(strcmp(kernel_name, "unsharpMask5") == 0) {
+        printf("Using unsharp mask 5 kernel\n");
+        outImg = convolveSerial(img, unsharpMask5, 5);
+    }
+    else {
+        perror("Unknown kernel\n");
+        free(img->data);
+        free(img);
+        exit(-1);
+    }
+    
     // Save output
     saveBMP(out_filename, outImg);
     printf("Modified image saved in file %s \n", out_filename);
